@@ -4,7 +4,7 @@ import re
 
 import pandas as pd
 
-from pyhealth.datasets import BaseDataset
+from pyhealth.datasets.base_dataset import BaseDataset
 from pyhealth.tasks.sleep_staging_nsrr import SleepStagingCardioRespiratory
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class NSRRSleepDataset(BaseDataset):
     https://sleepdata.org/datasets/shhs and https://sleepdata.org/datasets/mesa
 
     The dataset indexes each recording (``.edf``) together with its
-    expert-scored sleep stages (``*-profusion.xml``). Files are discovered
+    expert-scored sleep stages (``*-profusion.xml`` or ``*-nsrr.xml``). Files are discovered
     recursively under ``root``, so both the NSRR folder layout
     (``polysomnography/edfs/...`` and
     ``polysomnography/annotations-events-profusion/...``) and a flat folder
@@ -109,7 +109,7 @@ class NSRRSleepDataset(BaseDataset):
         edf_files: list[str] = []
         for folder, _, names in os.walk(root):
             for name in names:
-                if name.lower().endswith("-profusion.xml"):
+                if name.lower().endswith(("-profusion.xml", "-nsrr.xml")):
                     xml_files[name.lower()] = os.path.join(folder, name)
                 elif pattern.match(name):
                     edf_files.append(os.path.join(folder, name))
@@ -118,7 +118,9 @@ class NSRRSleepDataset(BaseDataset):
         for edf in sorted(edf_files):
             match = pattern.match(os.path.basename(edf))
             stem = os.path.splitext(os.path.basename(edf))[0].lower()
-            label_file = xml_files.get(f"{stem}-profusion.xml")
+            label_file = xml_files.get(f"{stem}-profusion.xml") or xml_files.get(
+                f"{stem}-nsrr.xml"
+            )
             if label_file is None:
                 logger.warning("No sleep stage annotation for %s; skipped", edf)
                 continue

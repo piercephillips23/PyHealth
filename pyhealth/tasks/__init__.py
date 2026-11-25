@@ -236,6 +236,9 @@ from .sleep_staging_isruc import SleepStagingISRUC as SleepStagingISRUC
 from .sleep_staging_isruc import (
     SleepStagingSequenceISRUC as SleepStagingSequenceISRUC,
 )
+from .shhs_multimodal_sleep_staging import (
+    SHHSMultimodalSleepStaging as SHHSMultimodalSleepStaging,
+)
 from .temple_university_EEG_tasks import (
     EEGEventsTUEV,
     EEGAbnormalTUAB

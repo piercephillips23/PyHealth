@@ -129,10 +129,10 @@ def _read_edf_channels(
 
 
 def _read_stage_codes(path: str) -> np.ndarray:
-    """Reads per-epoch sleep stage codes from an NSRR profusion XML file.
+    """Reads per-epoch codes from NSRR profusion or scored-event XML.
 
     Args:
-        path: Path to ``*-profusion.xml``.
+        path: Path to ``*-profusion.xml`` or ``*-nsrr.xml``.
 
     Returns:
         Integer array with one stage code per 30 s epoch.
@@ -145,9 +145,40 @@ def _read_stage_codes(path: str) -> np.ndarray:
     if length is not None and length.text and int(length.text) != EPOCH_SECONDS:
         raise ValueError(f"{path}: expected {EPOCH_SECONDS} s epochs")
     stages = [int(s.text) for s in root.iter("SleepStage") if s.text]
-    if not stages:
-        raise ValueError(f"{path} contains no <SleepStage> entries")
-    return np.asarray(stages, dtype=np.int64)
+    if stages:
+        return np.asarray(stages, dtype=np.int64)
+    # NSRR event annotations encode intervals, not one element per epoch.
+    return _expand_nsrr_stage_events(root, path)
+
+
+def _expand_nsrr_stage_events(root: ET.Element, path: str) -> np.ndarray:
+    """Expand chronological NSRR stage intervals into native stage codes.
+
+    Reject gaps, overlaps and non-epoch-aligned intervals rather than shifting
+    labels relative to signals. Unknown integer codes are retained for the
+    task to skip. Non-stage events are ignored.
+    """
+    codes: list[int] = []
+    for event in root.iter("ScoredEvent"):
+        if event.findtext("EventType") != "Stages|Stages":
+            continue
+        try:
+            start = float(event.findtext("Start", "")) / EPOCH_SECONDS
+            duration = float(event.findtext("Duration", "")) / EPOCH_SECONDS
+            code = int(event.findtext("EventConcept", "").rsplit("|", 1)[-1])
+        except (ValueError, TypeError) as err:
+            raise ValueError(f"{path}: malformed stage event") from err
+        if (
+            not start.is_integer()
+            or not duration.is_integer()
+            or duration <= 0
+            or start != len(codes)
+        ):
+            raise ValueError(f"{path}: noncontiguous or misaligned stage interval")
+        codes.extend([code] * int(duration))
+    if not codes:
+        raise ValueError(f"{path}: no sleep stage annotations")
+    return np.asarray(codes, dtype=np.int64)
 
 
 def _to_epochs(
