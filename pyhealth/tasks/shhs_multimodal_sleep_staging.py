@@ -56,7 +56,7 @@ class SHHSMultimodalSleepStaging(BaseTask):
         selected = tuple(modalities)
         if not selected or len(set(selected)) != len(selected):
             raise ValueError("modalities must be a nonempty subset without duplicates")
-        if any(m not in modalities for m in selected):
+        if any(m not in MODALITIES for m in selected):
             raise ValueError(f"modalities must be drawn from {modalities}")
         if not np.isfinite(min_std) or min_std <= 0:
             raise ValueError("min_std must be positive and finite")

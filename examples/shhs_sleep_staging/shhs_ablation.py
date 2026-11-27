@@ -25,6 +25,34 @@ Synthetic results are toy pipeline demonstrations ONLY and must not be used as
 scientific SHHS results. Synthetic data is generated in a temporary directory
 and discarded. Never commit restricted EDF/XML data, caches, predictions, or
 model checkpoints to a public PyHealth repository.
+
+SHHS1 Experimental Results
+--------------------------
+A partial reproduction of wav2sleep's missing-modality robustness
+experiments was conducted using 250 SHHS1 overnight recordings.
+
+Experimental configuration:
+- Participant-level split: 175 train / 38 validation / 37 test.
+- 120 deterministically sampled 30-second epochs per recording.
+- Three training policies: none, paper-inspired, balanced.
+- Four evaluation subsets: ECG, ABD+THX, ECG+THX, and all modalities.
+- PyHealth MLP baseline, 3 training epochs, random seed 6250.
+- Training masks sampled once per recording per training epoch.
+- Best checkpoint selected using validation mean Cohen's kappa.
+
+Mean test Cohen's kappa across the four evaluation subsets:
+- No masking:       0.2071
+- Paper-inspired:   0.2104
+- Balanced masking: 0.2008
+
+The paper-inspired masking policy achieved the highest mean kappa,
+but the improvement over no masking was small. Respiratory signals
+(ABD+THX) generally outperformed ECG-only evaluation. All models
+struggled to identify Deep and REM sleep stages.
+
+These findings are limited to a single training seed and a simplified
+epoch-level MLP without temporal modeling. They are not directly
+comparable to the original wav2sleep architecture or its results.
 """
 
 from __future__ import annotations
