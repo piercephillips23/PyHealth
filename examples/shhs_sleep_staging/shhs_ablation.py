@@ -1,24 +1,30 @@
 """Reproducible SHHS1 multimodal sleep-staging masking ablation.
 
-The script uses Person 1's SHHS task, collator and mask sampler, plus the
-existing PyHealth MLP through shhs_mlp.py. This is a single-epoch MLP baseline,
-NOT a reproduction of wav2sleep's CNN/Transformer/temporal architecture.
+This example uses the team's SHHS masking utilities and the existing PyHealth
+MLP via shhs_mlp.py. It does NOT reproduce wav2sleep's CNN/Transformer or
+night-level temporal architecture.
 
-python examples/shhs_sleep_staging/shhs_ablation.py \
-    --manifest "<path-to-shhs-manifest.csv>" \
-    --cache-dir "<path-to-cache-directory>" \
-    --output-dir "<path-to-output-directory>" \
-    --max-epochs-per-recording 120 \
-    --epochs 3
+Public synthetic demonstration (no SHHS files):
 
-Three training policies (none, paper, balanced) share one participant-disjoint
-manifest split, fixed data sampling and fixed test modality subsets.
-Checkpoints are selected by validation mean Cohen's kappa, never by test data.
+    python examples/shhs_sleep_staging/shhs_ablation.py --synthetic --epochs 1
 
-Exports summary and per-subset results, validation history, selected-checkpoint
-validation/test predictions (with real participant/recording/epoch IDs), class
-precision/recall/F1, and confusion matrices. Rows of confusion matrices have
-true labels; columns have predicted labels.
+Actual SHHS1 evaluation:
+
+    python examples/shhs_sleep_staging/shhs_ablation.py \
+      --manifest "<path-to-shhs1-manifest.csv>" \
+      --cache-dir "<path-to-cache-directory>" \
+      --output-dir "<path-to-output-directory>" \
+      --max-epochs-per-recording 120 --epochs 3
+
+Both modes run three training policies (none, paper, balanced) and evaluate
+four fixed input subsets (12 test evaluations); checkpoint selection uses
+validation mean Cohen's kappa only. Outputs include results, summaries,
+confusion matrices, per-class metrics and prediction-level diagnostics.
+
+Synthetic results are toy pipeline demonstrations ONLY and must not be used as
+scientific SHHS results. Synthetic data is generated in a temporary directory
+and discarded. Never commit restricted EDF/XML data, caches, predictions, or
+model checkpoints to a public PyHealth repository.
 """
 
 from __future__ import annotations
@@ -28,10 +34,11 @@ import csv
 import json
 import math
 import random
+import tempfile
 import zlib
 from collections import Counter
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 import torch
@@ -42,8 +49,10 @@ from pyhealth.tasks.shhs_multimodal_masking import (
     collate_shhs_epochs,
     sample_input_mask,
 )
-from pyhealth.tasks.shhs_multimodal_sleep_staging import SHHSMultimodalSleepStaging
 from shhs_mlp import CLASS_NAMES, PyHealthMaskedMLP
+
+if TYPE_CHECKING:
+    from pyhealth.tasks.shhs_multimodal_sleep_staging import SHHSMultimodalSleepStaging
 
 MODALITIES = ("ecg", "abd", "thx")
 SIGNAL_LENGTHS = {"ecg": 1024, "abd": 256, "thx": 256}
@@ -175,6 +184,9 @@ def make_cache(
 def preprocess(
     groups: dict[str, list[dict[str, str]]], cache_dir: Path, max_epochs: int
 ) -> tuple[dict[str, list[CachedRecording]], dict[str, dict[str, int]]]:
+    # Only the real-data path imports the EDF/XML task implementation.
+    from pyhealth.tasks.shhs_multimodal_sleep_staging import SHHSMultimodalSleepStaging
+
     cache_dir.mkdir(parents=True, exist_ok=True)
     task = SHHSMultimodalSleepStaging()
     prepared: dict[str, list[CachedRecording]] = {part: [] for part in SPLITS}
@@ -206,6 +218,56 @@ def preprocess(
             "excluded_recordings": len(skipped),
         }
         print(f"{split} cohort: {stats[split]}")
+    return prepared, stats
+
+
+def prepare_synthetic(
+    cache_dir: Path, seed: int,
+) -> tuple[dict[str, list[CachedRecording]], dict[str, dict[str, int]]]:
+    """Generate split-disjoint, balanced toy epochs for the public ablation.
+
+    The same collator, mask sampler, PyHealth MLP, training loop, validation
+    selection, and evaluation code are then used as for real SHHS recordings.
+    No EDF/XML files or separate generated dataset are required.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(seed)
+    counts = {"train": 6, "val": 3, "test": 3}
+    n_epochs = 16  # 4 examples per stage in each synthetic recording
+    prepared: dict[str, list[CachedRecording]] = {split: [] for split in SPLITS}
+    stats: dict[str, dict[str, int]] = {}
+
+    for split in SPLITS:
+        for index in range(counts[split]):
+            participant_id = f"synthetic-{split}-patient-{index:03d}"
+            recording_id = f"synthetic-{split}-recording-{index:03d}"
+            labels = np.tile(np.arange(N_CLASSES, dtype=np.int64), n_epochs // N_CLASSES)
+            rng.shuffle(labels)
+            arrays: dict[str, np.ndarray] = {
+                "label": labels,
+                "epoch_index": np.arange(n_epochs, dtype=np.int32),
+                "availability_mask": np.ones((n_epochs, len(MODALITIES)), dtype=np.bool_),
+            }
+            for name, length in SIGNAL_LENGTHS.items():
+                t = np.arange(length, dtype=np.float32) / length
+                # Shared class-dependent patterns are only synthetic examples,
+                # NOT simulated ECG, respiration, or physiological sleep data.
+                patterns = np.stack([
+                    np.sin(2 * np.pi * (cls + 1) * t)
+                    for cls in range(N_CLASSES)
+                ]).astype(np.float32)
+                noise = rng.normal(0.0, 1.0, size=(n_epochs, length))
+                arrays[name] = (0.25 * patterns[labels] + noise).astype(np.float32)
+            path = cache_dir / f"{recording_id}.npz"
+            np.savez_compressed(path, **arrays)
+            prepared[split].append(CachedRecording(recording_id, participant_id, path))
+        stats[split] = {
+            "n_recordings": counts[split],
+            "n_epochs": counts[split] * n_epochs,
+            **{f"class_{cls}": counts[split] * n_epochs // N_CLASSES for cls in range(N_CLASSES)},
+            "excluded_recordings": 0,
+        }
+        print(f"{split} synthetic cohort: {stats[split]}")
     return prepared, stats
 
 
@@ -459,10 +521,31 @@ def run(args: argparse.Namespace) -> None:
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    if args.synthetic:
+        if args.manifest is not None or args.cache_dir is not None:
+            raise ValueError("--synthetic needs no --manifest or --cache-dir")
+        if args.max_recordings_per_split or args.max_epochs_per_recording:
+            raise ValueError("--max-recordings-per-split and --max-epochs-per-recording are SHHS-only")
+        # Keep temporary caches alive through the entire training/evaluation.
+        with tempfile.TemporaryDirectory(prefix="shhs_synthetic_ablation_") as temp:
+            print("SYNTHETIC DEMO: generated toy data, not a scientific result", flush=True)
+            items, stats = prepare_synthetic(Path(temp), args.seed)
+            return run_prepared(args, items, stats)
+    if args.manifest is None or args.cache_dir is None:
+        raise ValueError("Real SHHS mode requires --manifest and --cache-dir (or use --synthetic)")
     groups = read_manifest(args.manifest, args.max_recordings_per_split)
     selected_count = sum(len(v) for v in groups.values())
     print(f"Preparing {selected_count} recordings with frozen participant splits", flush=True)
     items, stats = preprocess(groups, args.cache_dir, args.max_epochs_per_recording)
+    return run_prepared(args, items, stats)
+
+
+def run_prepared(
+    args: argparse.Namespace,
+    items: dict[str, list[CachedRecording]],
+    stats: dict[str, dict[str, int]],
+) -> None:
+    """Share training, checkpoint selection, metrics and exports in both modes."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training device: {device}")
 
@@ -473,7 +556,8 @@ def run(args: argparse.Namespace) -> None:
         "masking": "Person 1 sample_input_mask, once per recording per training epoch",
         "evaluation": "Four fixed subsets on a common complete-case validation/test cohort",
         "checkpoint_selection": "Highest validation mean kappa across the four subsets",
-        "manifest": str(args.manifest),
+        "manifest": None if args.synthetic else str(args.manifest),
+        "data_source": "synthetic toy demo (NOT SHHS results)" if args.synthetic else "SHHS1 EDF/XML",
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "lr": args.lr,
@@ -482,8 +566,12 @@ def run(args: argparse.Namespace) -> None:
         "max_epochs_per_recording": args.max_epochs_per_recording,
         "sampling": "Fixed deterministic uniform random epochs per recording (not contiguous)",
         "cohort_stats": stats,
-        "limitations": "SHHS1-only, nonrandom EDF cohort, subsampled epochs if capped, "
-                       "no temporal context, single training seed",
+        "limitations": (
+            "Synthetic toy waveforms; not a meaningful sleep-stage experiment"
+            if args.synthetic else
+            "SHHS1-only, nonrandom EDF cohort, subsampled epochs if capped, "
+            "no temporal context, single training seed"
+        ),
     }
     (args.output_dir / "config.json").write_text(
         json.dumps(config, indent=2), encoding="utf-8"
@@ -618,9 +706,11 @@ def run(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, required=True)
-    parser.add_argument("--cache-dir", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, default=Path("runs/shhs_ablation"))
+    parser.add_argument("--synthetic", action="store_true",
+                        help="Run the full ablation on generated toy data (no SHHS files needed)")
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--hidden-dim", type=int, default=64)
@@ -633,6 +723,8 @@ def main() -> None:
         help="Save selected PyHealth MLP weights locally (do not commit to Git)",
     )
     args = parser.parse_args()
+    if args.output_dir is None:
+        args.output_dir = Path("runs/shhs_synthetic_demo" if args.synthetic else "runs/shhs_ablation")
     run(args)
 
 
