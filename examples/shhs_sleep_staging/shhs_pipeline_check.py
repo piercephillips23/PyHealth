@@ -1,12 +1,9 @@
 """Verify SHHS EDF/XML preprocessing, masking, and PyHealth MLP integration.
 
-Place beside shhs_mlp.py in the cloned PyHealth/examples directory.
-Run from the repository root (PowerShell):
-
-python examples/shhs_pipeline_check.py `
-  --edf-dir "C:\\Users\\potan\\shhs\\polysomnography\\edfs\\shhs1" `
-  --xml-dir "C:\\Users\\potan\\shhs\\polysomnography\\annotations-events-nsrr\\shhs1" `
-  --recording-id shhs1-200005
+python examples/shhs_sleep_staging/shhs_pipeline_check.py \
+  --edf-dir "<path-to-shhs1-edfs>" \
+  --xml-dir "<path-to-shhs1-annotations>" \
+  --recording-id "<recording-id>"
 
 This is a pipeline integration check, NOT a scientific evaluation.
 """

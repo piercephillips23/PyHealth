@@ -1,14 +1,12 @@
 """Build a matched SHHS1 manifest with reproducible participant-disjoint splits.
 
-Example (PowerShell):
-    python examples/shhs_manifest.py `
-        --edf-dir "C:\\Users\\potan\\shhs\\polysomnography\\edfs\\shhs1" `
-        --xml-dir "C:\\Users\\potan\\shhs\\polysomnography\\annotations-events-nsrr\\shhs1" `
-        --output "C:\\Users\\potan\\shhs\\shhs1_manifest.csv"
+python examples/shhs_sleep_staging/shhs_manifest.py \
+    --edf-dir "<path-to-shhs1-edfs>" \
+    --xml-dir "<path-to-shhs1-annotations>" \
+    --output "<path-to-shhs1-manifest.csv>"
 
 This script only inventories filenames; it does not verify EDF readability,
 channel availability, annotation completeness, or signal quality.
-Keep the output local rather than committing restricted-data paths to Git.
 """
 
 from __future__ import annotations

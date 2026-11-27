@@ -4,13 +4,12 @@ The script uses Person 1's SHHS task, collator and mask sampler, plus the
 existing PyHealth MLP through shhs_mlp.py. This is a single-epoch MLP baseline,
 NOT a reproduction of wav2sleep's CNN/Transformer/temporal architecture.
 
-Run from the cloned PyHealth repository root (PowerShell):
-
-    python examples/shhs_ablation.py `
-      --manifest "C:\\Users\\potan\\shhs\\shhs1_manifest.csv" `
-      --cache-dir "C:\\Users\\potan\\shhs\\processed_cache" `
-      --output-dir "C:\\Users\\potan\\shhs\\analysis_3ep" `
-      --max-epochs-per-recording 120 --epochs 3
+python examples/shhs_sleep_staging/shhs_ablation.py \
+    --manifest "<path-to-shhs-manifest.csv>" \
+    --cache-dir "<path-to-cache-directory>" \
+    --output-dir "<path-to-output-directory>" \
+    --max-epochs-per-recording 120 \
+    --epochs 3
 
 Three training policies (none, paper, balanced) share one participant-disjoint
 manifest split, fixed data sampling and fixed test modality subsets.
@@ -20,9 +19,6 @@ Exports summary and per-subset results, validation history, selected-checkpoint
 validation/test predictions (with real participant/recording/epoch IDs), class
 precision/recall/F1, and confusion matrices. Rows of confusion matrices have
 true labels; columns have predicted labels.
-
-IMPORTANT: EDF files, processed caches, prediction-level exports and local data
-paths should remain outside the Git repository / final upstream PyHealth PR.
 """
 
 from __future__ import annotations
